@@ -407,7 +407,7 @@ ensure
 end
 
 unless Redwood::exceptions.empty?
-  File.open(File.join(BASE_DIR, "exception-log.txt"), "w") do |f|
+  File.open(File.join(BASE_DIR, "exception-"+Time.now.strftime("%Y-%m-%d--%H:%M:%S")+".log", ), "w") do |f|
     Redwood::exceptions.each do |e, name|
       f.puts "--- #{e.class.name} from thread: #{name}"
       f.puts e.message, e.backtrace
