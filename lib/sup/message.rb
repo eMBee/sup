@@ -3,7 +3,6 @@
 require 'time'
 require 'uri'
 
-
 module Redwood
 
 ## a Message is what's threaded.
@@ -140,18 +139,29 @@ class Message
 
     @list_subscribe = m.fetch_header(:list_subscribe)
     @list_unsubscribe = m.fetch_header(:list_unsubscribe)
-    @list_address = Person.from_address(get_email_from_mailto(m.fetch_header(:list_post) || m.fetch_header(:x_mailing_list)))
+    @list_address = Person.from_address(get_email_from_string(m.fetch_header(:list_post) || m.fetch_header(:x_mailing_list)))
 
     @source_marked_read = m.fetch_header(:status) == 'RO'
   end
 
   # get to field from mailto:example@example uri
-  def get_email_from_mailto field
+  def get_email_from_string field
     return nil if field.nil?
     u = URI
     k = u.extract field, 'mailto'
-    a = u.parse k[0]
-    return a.to
+    debug "get_email_from_string: #{field}:#{k}."
+    if k.any?
+      a = u.parse k[0]
+      return a.to
+    else
+      begin
+        a = Mail::Address.new field
+      rescue
+        a = Mail::Address.new field.match(/<?[^<]*@[^>]*>?/).to_s
+      end
+      debug "get_email_from_string: #{field}:#{a}."
+      return a.address
+    end
   end
 
   ## Expected index entry format:
