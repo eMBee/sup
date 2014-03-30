@@ -82,13 +82,19 @@ protected
       string = LabelManager.string_for label
       total = Index.num_results_for :label => label
       unread = (label == :unread)? total : Index.num_results_for(:labels => [label, :unread])
-      [label, string, total, unread]
+      new = (label == :new)? total : Index.num_results_for(:labels => [label, :new])
+      last_update = nil
+      Index.each_message(:labels => [label, :new]) { |m| last_update = m.date; break  if m.date < Time.now }
+      if not last_update
+        Index.each_message(:label => label) { |m| last_update = m.date; break  if m.date < Time.now }
+      end
+      [label, string, total, unread, new, last_update]
     end
 
     if HookManager.enabled? "label-list-filter"
       counts = HookManager.run "label-list-filter", :counted => counted
     else
-      counts = counted.sort_by { |l, s, t, u| s.downcase }
+      counts = counted.sort_by { |l, s, t, u, n, d| d or Time.at 0 }.reverse  # s.downcase } ## sort by date
     end
 
     width = counts.max_of { |l, s, t, u| s.length }
@@ -100,7 +106,7 @@ protected
     end
 
     @labels = []
-    counts.map do |label, string, total, unread|
+    counts.map do |label, string, total, unread, new, date|
       ## if we've done a search and there are no messages for this label, we can delete it from the
       ## list. BUT if it's a brand-new label, the user may not have sync'ed it to the index yet, so
       ## don't delete it in this case.
@@ -116,11 +122,21 @@ protected
 
       fmt = HookManager.run "label-list-format", :width => width, :tmax => tmax, :umax => umax
       if !fmt
-        fmt = "%#{width + 1}s %5d %s, %5d unread"
+        fmt = "%#{width + 1}s %6d %s, %6d unread, %3d new - %10s"
       end
 
-      @text << [[(unread == 0 ? :labellist_old_color : :labellist_new_color),
-          sprintf(fmt, string, total, total == 1 ? " message" : "messages", unread)]]
+      if date
+        begin
+          datestr = date.getlocal.to_nice_s
+        rescue
+          datestr = date.to_s
+        end
+      else
+          datestr = ""
+      end
+
+      @text << [[(new == 0 ? :labellist_old_color : :labellist_new_color),
+          sprintf(fmt, string, total, total == 1 ? " message" : "messages", unread, new, datestr)]]
       @labels << [label, unread]
       yield i if block_given?
     end.compact

@@ -166,7 +166,7 @@ class Maildir < Source
     added.each_with_index do |id,i|
       yield :add,
       :info => id,
-      :labels => @labels + maildir_labels(id) + [:inbox],
+      :labels => @labels + maildir_labels(id) + [:inbox, :new],
       :progress => i.to_f/total_size
     end
 

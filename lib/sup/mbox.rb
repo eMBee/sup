@@ -138,7 +138,7 @@ class MBox < Source
   end
 
   def default_labels
-    [:inbox, :unread]
+    [:inbox, :unread, :new]
   end
 
   def poll

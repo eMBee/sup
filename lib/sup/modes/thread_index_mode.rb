@@ -97,6 +97,10 @@ EOS
   def contains_thread? t; @threads.include?(t) end
 
   def reload
+    @ts.threads.each do |th| 
+      th.remove_label :new
+      Index.save_thread th
+    end 
     drop_all_threads
     UndoManager.clear
     BufferManager.draw_screen
@@ -126,6 +130,7 @@ EOS
       ## are set, and the second to show the cursor having moved
 
       t.remove_label :unread
+      t.remove_label :new
       Index.save_thread t
 
       update_text_for_line curpos
