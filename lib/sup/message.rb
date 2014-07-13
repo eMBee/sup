@@ -119,7 +119,12 @@ class Message
     @cc = Person.from_address_list (m.fetch_header (:cc))
     @bcc = Person.from_address_list (m.fetch_header (:bcc))
 
-    @subj = (m.subject || DEFAULT_SUBJECT)
+    begin
+        @subj = (m.subject || DEFAULT_SUBJECT)
+    rescue ArgumentError
+        @subj = DEFAULT_SUBJECT
+        add_label :mailcrash
+    end
     @replyto = Person.from_address (m.fetch_header (:reply_to))
 
     ## before loading our full header from the source, we can actually
