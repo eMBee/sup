@@ -42,6 +42,14 @@ Return value:
   None.
 EOS
 
+  HookManager.register "goto", <<EOS
+Open the uri given as a parameter.
+Variables:
+      uri: The uri
+Return value:
+  None.
+EOS
+
   register_keymap do |k|
     k.add :toggle_detailed_header, "Toggle detailed header", 'h'
     k.add :show_header, "Show full message header", 'H'
@@ -79,6 +87,8 @@ EOS
     k.add :delete_and_next, "Delete this thread, kill buffer, and view next", 'd'
     k.add :kill_and_next, "Kill this thread, kill buffer, and view next", '&'
     k.add :toggle_wrap, "Toggle wrapping of text", 'w'
+
+    k.add :goto_uri, "Goto uri under cursor", 'g'
 
     k.add_multi "(a)rchive/(d)elete/mark as (s)pam/mark as u(N)read:", '.' do |kk|
       kk.add :archive_and_kill, "Archive this thread and kill buffer", 'a'
@@ -214,10 +224,24 @@ EOS
 
   def unsubscribe_from_list
     m = @message_lines[curpos] or return
-    if m.list_unsubscribe && m.list_unsubscribe =~ /<mailto:(.*?)(\?subject=(.*?))?>/
+    BufferManager.flash "Can't find List-Unsubscribe header for this message." unless m.list_unsubscribe
+
+    if m.list_unsubscribe =~ /<mailto:(.*?)(\?subject=(.*?))?>/
       ComposeMode.spawn_nicely :from => AccountManager.account_for(m.recipient_email), :to => [Person.from_address($1)], :subj => ($3 || "unsubscribe")
-    else
-      BufferManager.flash "Can't find List-Unsubscribe header for this message."
+    elsif m.list_unsubscribe =~ /<(http.*)?>/
+      unless HookManager.enabled? "goto"
+        BufferManager.flash "You must add a goto.rb hook before you can goto an unsubscribe URI."
+        return
+      end
+
+      begin
+        u = URI.parse($1)
+      rescue URI::InvalidURIError => e
+        BufferManager.flash("Invalid unsubscribe link")
+        return
+      end
+
+      HookManager.run "goto", :uri => Shellwords.escape(u.to_s)
     end
   end
 
@@ -698,12 +722,17 @@ EOS
     command = BufferManager.ask(:shell, "pipe command: ")
     return if command.nil? || command.empty?
 
-    output = pipe_to_process(command) do |stream|
+    output, success = pipe_to_process(command) do |stream|
       if chunk
         stream.print chunk.raw_content
       else
         message.each_raw_message_line { |l| stream.print l }
       end
+    end
+
+    unless success
+      BufferManager.flash "Invalid command: '#{command}' is not an executable"
+      return
     end
 
     if output
@@ -720,6 +749,48 @@ EOS
     end.compact.join(",")
     user_labels = (user_labels.empty? and "" or "<#{user_labels}>")
     [user_labels, super].join(" -- ")
+  end
+
+  def goto_uri
+    unless (chunk = @chunk_lines[curpos])
+      BufferManager.flash "No URI found."
+      return
+    end
+    unless HookManager.enabled? "goto"
+      BufferManager.flash "You must add a goto.rb hook before you can goto a URI."
+      return
+    end
+
+    # @text is a list of lines with this format:
+    # [
+    #   [[:text_color, "Some text"]]
+    #   [[:text_color, " continued here"]]
+    # ]
+
+    linetext = @text.slice(curpos, @text.length).flatten(1)
+      .take_while{|d| d[0] == :text_color and d[1].strip != ""} # Only take up to the first "" alone on its line
+      .map{|d| d[1].strip}.join("").strip
+
+    found = false
+    (linetext || "").scan(URI::regexp).each do |matches|
+      begin
+        link = $& # ruby magic: $& is the whole regexp match
+        u = URI.parse(link)
+        next unless u.absolute?
+        next unless ["http", "https"].include?(u.scheme)
+
+        reallink = Shellwords.escape(u.to_s)
+        BufferManager.flash "Going to #{reallink} ..."
+        HookManager.run "goto", :uri => reallink
+        BufferManager.completely_redraw_screen
+        found = true
+
+      rescue URI::InvalidURIError => e
+        debug "not a uri: #{e}"
+        # Do nothing, this is an ok flow
+      end
+    end
+    BufferManager.flash "No URI found." unless found
   end
 
 private
